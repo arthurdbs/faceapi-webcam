@@ -1,43 +1,52 @@
-const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const url = 'ws://localhost:9999';
 
-Promise.all([
-  faceapi.nets.tinyFaceDetector.loadFromUri('/models/tiny_face_detector'),
-  faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
-  faceapi.nets.faceRecognitionNet.loadFromUri('/models'),
-  faceapi.nets.ssdMobilenetv1.loadFromUri('/models')
-]).then(startVideo);
-
-function startVideo() {
-  navigator.mediaDevices.getUserMedia({ video: {} })
-    .then(stream => {
-      video.srcObject = stream;
-    })
-    .catch(err => {
-      console.error(err);
-    });
-}
-
-video.addEventListener('play', async () => {
-  const canvas = faceapi.createCanvasFromMedia(video);
-  document.body.append(canvas);
-  const displaySize = { width: video.width, height: video.height };
-  faceapi.matchDimensions(canvas, displaySize);
+// Função para iniciar a detecção facial
+async function startFaceDetection() {
+  console.log("Iniciando detecção de rostos...");
+  const displaySize = { width: canvas.width, height: canvas.height };
+  const overlay = faceapi.createCanvasFromMedia(canvas);
+  document.querySelector('div[style*="position: relative"]').append(overlay);
+  faceapi.matchDimensions(overlay, displaySize);
 
   const labeledFaceDescriptors = await loadLabeledImages();
+  if (!labeledFaceDescriptors) {
+    console.error("Nenhum descritor de rosto carregado.");
+    return;
+  }
   const faceMatcher = new faceapi.FaceMatcher(labeledFaceDescriptors, 0.6);
 
   setInterval(async () => {
-    const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
+    const detections = await faceapi.detectAllFaces(canvas, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
     const resizedDetections = faceapi.resizeResults(detections, displaySize);
-    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height);
 
     const results = resizedDetections.map(d => faceMatcher.findBestMatch(d.descriptor));
     results.forEach((result, i) => {
       const box = resizedDetections[i].detection.box;
       const drawBox = new faceapi.draw.DrawBox(box, { label: result.toString() });
-      drawBox.draw(canvas);
+      drawBox.draw(overlay);
     });
-  }, 100);
+  }, 2000);
+}
+
+// Carrega os modelos e depois inicia o player
+Promise.all([
+  faceapi.nets.tinyFaceDetector.loadFromUri('/models/tiny_face_detector'),
+  faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
+  faceapi.nets.faceRecognitionNet.loadFromUri('/models'),
+  faceapi.nets.ssdMobilenetv1.loadFromUri('/models')
+]).then(() => {
+  console.log("Modelos do FaceAPI carregados.");
+  // Inicia o player de vídeo
+  const player = new JSMpeg.Player(url, {
+    canvas: canvas,
+    audio: false, // Desativa o áudio
+    onPlay: () => {
+      console.log("Stream de vídeo iniciado.");
+      startFaceDetection(); // Inicia a detecção DEPOIS que o vídeo começar a tocar
+    }
+  });
 });
 
 async function loadLabeledImages() {

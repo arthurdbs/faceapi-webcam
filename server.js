@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const { createClient } = require('@libsql/client');
 const path = require('path');
+require('./stream.js');
 
 const app = express();
 const port = 3000;
