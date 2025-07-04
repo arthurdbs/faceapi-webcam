@@ -2,10 +2,10 @@
   "name": "faceapi-webcam",
   "version": "1.0.0",
   "description": "Este projeto usa a biblioteca FaceAPI.js para detectar rostos em uma imagem estática e desenhar retângulos ao redor deles.",
-  "main": "script.js",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
     "type": "git",
@@ -14,15 +14,11 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/AllbrightSl/faceapi-teste-appia/issues"
-  },
-  "homepage": "https://github.com/AllbrightSl/faceapi-teste-appia#readme",
   "dependencies": {
-    "@libsql/client": "^0.15.9",
+    "@libsql/client": "^0.7.0",
     "canvas": "^3.1.2",
-    "dotenv": "^16.6.0",
-    "express": "^5.1.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
     "face-api.js": "^0.22.2",
     "node-fetch": "^3.3.2",
     "node-rtsp-stream": "^0.0.9",

@@ -2,19 +2,17 @@ require('dotenv').config();
 const express = require('express');
 const { createClient } = require('@libsql/client');
 const path = require('path');
-require('./stream.js');
+require('./stream.js'); // Inicia o stream da câmera
 
 const app = express();
 const port = 3000;
 
-// --- Servir arquivos estáticos ---
-// Define o diretório raiz para servir os arquivos
-const publicDir = path.join(__dirname);
-app.use(express.static(publicDir));
+// Servir arquivos estáticos do diretório atual
+app.use(express.static(__dirname));
 
 // Rota principal que serve o index.html
 app.get('/', (req, res) => {
-  res.sendFile(path.join(publicDir, 'index.html'));
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // Configuração do cliente Turso
@@ -24,66 +22,58 @@ const db = createClient({
 });
 
 // Endpoint para buscar os descritores faciais
-// Ex: http://localhost:3000/descriptors/Familia_Brito_Silva
 app.get('/descriptors/:label', async (req, res) => {
-  const label = req.params.label;
+  const { label } = req.params;
 
   try {
     const rs = await db.execute({
       sql: "SELECT descriptor FROM image_features WHERE nome = ?",
-      args: [label]
+      args: [label],
     });
 
-    if (rs.rows.length > 0) {
-      let descriptor = rs.rows[0].descriptor;
-      // Log para depuração
-      console.log('DEBUG descriptor:', descriptor);
-      console.log('DEBUG typeof:', typeof descriptor);
-      console.log('DEBUG constructor:', descriptor && descriptor.constructor && descriptor.constructor.name);
-      let descriptorAsArray;
-
-      if (Buffer.isBuffer(descriptor)) {
-        // Caso 1: Buffer binário
-        const float32Array = new Float32Array(
-          descriptor.buffer,
-          descriptor.byteOffset,
-          descriptor.byteLength / 4
-        );
-        descriptorAsArray = Array.from(float32Array);
-      } else if (Array.isArray(descriptor)) {
-        // Caso 2: Array de números
-        descriptorAsArray = descriptor;
-      } else if (typeof descriptor === 'string') {
-        // Caso 3: String de números separados por vírgula (com ou sem espaço)
-        descriptorAsArray = descriptor.split(',').map(s => Number(s.trim())).filter(n => !isNaN(n));
-        console.log('DEBUG tamanho do descritor convertido:', descriptorAsArray.length);
-      } else if (descriptor && typeof descriptor === 'object' && descriptor.constructor && descriptor.constructor.name === 'Uint8Array') {
-        // Caso 4: Uint8Array
-        const float32Array = new Float32Array(
-          descriptor.buffer,
-          descriptor.byteOffset,
-          descriptor.byteLength / 4
-        );
-        descriptorAsArray = Array.from(float32Array);
-      } else if (descriptor instanceof ArrayBuffer) {
-        // Caso 5: ArrayBuffer
-        const float32Array = new Float32Array(descriptor);
-        descriptorAsArray = Array.from(float32Array);
-      } else {
-        throw new Error("Formato de dado do descritor não suportado.");
-      }
-
-      res.json([descriptorAsArray]);
-    } else {
-      res.status(404).send('Descritores não encontrados para o rótulo');
+    if (rs.rows.length === 0) {
+      return res.status(404).json({ error: `Descritor não encontrado para o rótulo: ${label}` });
     }
+
+    const descriptorRaw = rs.rows[0].descriptor;
+    let descriptorArray;
+
+    // Adicionando logs para depuração no terminal
+    console.log(`[DEBUG] Rótulo: ${label}`);
+    console.log(`[DEBUG] Tipo do descritor recebido do DB: ${typeof descriptorRaw}`);
+    console.log(`[DEBUG] É Buffer? ${Buffer.isBuffer(descriptorRaw)}`);
+
+    // Lógica robusta para conversão de tipo
+    if (Buffer.isBuffer(descriptorRaw)) {
+        // Se for um Buffer (BLOB), converte para Float32Array
+        descriptorArray = Array.from(new Float32Array(descriptorRaw.buffer, descriptorRaw.byteOffset, descriptorRaw.byteLength / Float32Array.BYTES_PER_ELEMENT));
+    } else if (typeof descriptorRaw === 'string') {
+        // Se for uma string, converte para array de números
+        descriptorArray = descriptorRaw.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+    } else if (Array.isArray(descriptorRaw)){
+        // Se já for um array, usa diretamente
+        descriptorArray = descriptorRaw;
+    } else {
+        console.error(`[ERROR] Formato de descritor não suportado para o rótulo: ${label}`);
+        throw new Error('Formato de descritor não suportado no banco de dados.');
+    }
+
+    // Validação final para garantir que o descritor é válido para o face-api.js
+    if (!descriptorArray || descriptorArray.length !== 128) {
+        console.error(`[ERROR] O descritor para '${label}' é inválido. Comprimento: ${descriptorArray ? descriptorArray.length : 'nulo'}`);
+        return res.status(500).json({ error: `O descritor para '${label}' é inválido ou está corrompido.` });
+    }
+
+    console.log(`[SUCCESS] Descritor para '${label}' processado com sucesso.`);
+    // O face-api espera um array de descritores
+    res.json([descriptorArray]);
+
   } catch (error) {
-    console.error('Erro ao buscar descritores:', error);
-    res.status(500).send('Erro no servidor');
+    console.error(`[FATAL] Erro ao buscar descritores para '${label}':`, error);
+    res.status(500).json({ error: 'Erro interno no servidor ao processar o descritor facial.' });
   }
 });
 
 app.listen(port, () => {
   console.log(`Servidor rodando em http://localhost:${port}`);
-  console.log(`Acesse a aplicação em http://localhost:${port}/index.html`);
 });
