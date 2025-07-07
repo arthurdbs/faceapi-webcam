@@ -1,5 +1,15 @@
-const canvas = document.getElementById('canvas');
+
 const url = 'ws://localhost:9999'; // URL para o stream WebSocket
+const videoContainer = document.getElementById('video-container');
+
+// TESTE: cria um canvas manualmente para ver se aparece
+const testCanvas = document.createElement('canvas');
+testCanvas.width = 320;
+testCanvas.height = 240;
+testCanvas.style.border = "2px solid red";
+testCanvas.style.position = "absolute";
+testCanvas.style.zIndex = 1000;
+videoContainer.appendChild(testCanvas);
 
 // Função principal assíncrona para encapsular a lógica
 async function main() {
@@ -49,42 +59,118 @@ async function loadLabeledImages() {
   );
 }
 
+// Função para aguardar o canvas estar pronto
+async function waitForCanvasReady(canvas, maxTries = 20, interval = 300) {
+  let tries = 0;
+  while (tries < maxTries) {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      console.warn('Canvas context ainda não disponível, tentativa', tries + 1);
+      await new Promise(res => setTimeout(res, interval));
+      tries++;
+      continue;
+    }
+    let pixels;
+    try {
+      pixels = ctx.getImageData(0, 0, 1, 1).data;
+    } catch (e) {
+      console.warn('Erro ao acessar getImageData, tentativa', tries + 1, e);
+      await new Promise(res => setTimeout(res, interval));
+      tries++;
+      continue;
+    }
+    if (pixels[3] !== 0) return true; // Se o alpha não for 0, tem imagem
+    await new Promise(res => setTimeout(res, interval));
+    tries++;
+  }
+  return false;
+}
+
 // Inicia o player de vídeo e a detecção facial
 async function startPlayerAndDetection() {
   console.log("Iniciando player de vídeo...");
   const player = new JSMpeg.Player(url, {
-    canvas: canvas,
     audio: false,
-    onPlay: async () => {
-      console.log("Stream de vídeo iniciado. Configurando detecção de rosto...");
+    // Passa explicitamente o container para o JSMpeg criar o canvas dentro dele
+    // Isso garante que o canvas será filho de videoContainer
+    // https://github.com/phoboslab/jsmpeg#usage
+    // O canvas será criado automaticamente dentro do container
+    // Assim o MutationObserver funciona corretamente
+    // O canvas será o primeiro filho do videoContainer
+    // O overlay será adicionado depois
+    // O resto do código permanece igual
+    //
+    // O onPlay é chamado quando o player começa a tocar
+    // O observer detecta o canvas assim que ele aparece
+    //
+    // Adiciona a opção "container"
+    //
+    // O resto do código permanece igual
+    container: videoContainer,
+    onPlay: () => {
+      console.log("Stream de vídeo iniciado. Aguardando canvas do player...");
+      const observer = new MutationObserver(async (mutationsList, observerInstance) => {
+        const videoCanvas = videoContainer.querySelector('canvas');
+        if (videoCanvas) {
+          observerInstance.disconnect();
+          console.log('Canvas do player detectado. Iniciando detecção de rosto...');
 
-      const labeledFaceDescriptors = (await loadLabeledImages()).filter(d => d !== null);
-      if (labeledFaceDescriptors.length === 0) {
-        console.error("Nenhum descritor de rosto foi carregado com sucesso. A detecção não pode continuar.");
-        alert("Não foi possível carregar os dados de reconhecimento. Verifique o console.");
-        return;
-      }
-      console.log("Descritores carregados e prontos.");
+          const labeledFaceDescriptors = (await loadLabeledImages()).filter(d => d !== null);
+          if (labeledFaceDescriptors.length === 0) {
+            console.error("Nenhum descritor de rosto foi carregado com sucesso. A detecção não pode continuar.");
+            alert("Não foi possível carregar os dados de reconhecimento. Verifique o console.");
+            return;
+          }
+          console.log("Descritores carregados e prontos.");
 
-      const faceMatcher = new faceapi.FaceMatcher(labeledFaceDescriptors, 0.6);
-      const displaySize = { width: canvas.width, height: canvas.height };
-      const overlay = faceapi.createCanvasFromMedia(canvas);
-      document.querySelector('div[style*="position: relative"]').append(overlay);
-      faceapi.matchDimensions(overlay, displaySize);
+          // Aguarda o canvas ter imagem antes de criar o overlay
+          const ready = await waitForCanvasReady(videoCanvas);
+          if (!ready) {
+            console.error("Canvas do vídeo não ficou pronto a tempo. Não será possível detectar rostos.");
+            return;
+          }
 
-      console.log("Iniciando loop de detecção...");
-      setInterval(async () => {
-        const detections = await faceapi.detectAllFaces(canvas, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
-        const resizedDetections = faceapi.resizeResults(detections, displaySize);
-        overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height);
+          const faceMatcher = new faceapi.FaceMatcher(labeledFaceDescriptors, 0.6);
+          const displaySize = { width: videoCanvas.width, height: videoCanvas.height };
+          const overlay = faceapi.createCanvasFromMedia(videoCanvas);
+          videoContainer.appendChild(overlay);
+          faceapi.matchDimensions(overlay, displaySize);
 
-        const results = resizedDetections.map(d => faceMatcher.findBestMatch(d.descriptor));
-        results.forEach((result, i) => {
-          const box = resizedDetections[i].detection.box;
-          const drawBox = new faceapi.draw.DrawBox(box, { label: result.toString() });
-          drawBox.draw(overlay);
-        });
-      }, 2000); // Aumentado para 2 segundos para dar mais tempo de processamento
+          console.log("Iniciando loop de detecção...");
+          setInterval(async () => {
+            const ctx = videoCanvas.getContext('2d');
+            if (!ctx) {
+              console.warn('Contexto do canvas não disponível nesta iteração. Pulando detecção.');
+              return;
+            }
+            let detections = [];
+            try {
+              detections = await faceapi.detectAllFaces(videoCanvas, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
+            } catch (e) {
+              console.warn('Erro ao rodar detectAllFaces:', e);
+              return;
+            }
+            const resizedDetections = faceapi.resizeResults(detections, displaySize);
+            const overlayCtx = overlay.getContext('2d');
+            if (!overlayCtx) {
+              console.warn('Contexto do overlay não disponível.');
+              return;
+            }
+            overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+
+            // Log de debug: quantos rostos detectados
+            console.log(`Rostos detectados: ${resizedDetections.length}`);
+
+            const results = resizedDetections.map(d => faceMatcher.findBestMatch(d.descriptor));
+            results.forEach((result, i) => {
+              const box = resizedDetections[i].detection.box;
+              const drawBox = new faceapi.draw.DrawBox(box, { label: result.toString() });
+              drawBox.draw(overlay);
+            });
+          }, 2000);
+        }
+      });
+      observer.observe(videoContainer, { childList: true, subtree: true });
     },
     onStall: () => {
         console.warn("Stream de vídeo pausado ou com buffer.");

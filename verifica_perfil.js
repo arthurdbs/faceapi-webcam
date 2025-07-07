@@ -3,7 +3,7 @@ const onvif = require('onvif');
 console.log('Tentando conectar na câmera para verificar os perfis ONVIF...');
 
 const cam = new onvif.Cam({
-    hostname: '192.168.18.88',
+    hostname: '192.168.18.187',
     username: 'admin',
     password: 'APPIA-DADOOH',
     port: 80,
