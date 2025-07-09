@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Teste JSMpeg</title>
+</head>
+<body>
+    <h1>Teste do JSMpeg</h1>
+    <div id="test-result"></div>
+    
+    <script src="jsmpeg.min.js"></script>
+    <script>
+        const resultDiv = document.getElementById('test-result');
+        
+        if (typeof JSMpeg !== 'undefined') {
+            resultDiv.innerHTML = '<p style="color: green;">✅ JSMpeg carregado com sucesso!</p>';
+            console.log('JSMpeg version:', JSMpeg.Player);
+        } else {
+            resultDiv.innerHTML = '<p style="color: red;">❌ JSMpeg não foi carregado!</p>';
+        }
+    </script>
+</body>
+</html>

@@ -1,185 +1,228 @@
+// Configurações
+const WEBSOCKET_URL = 'ws://localhost:9999';
+const MODEL_PATH = '/models';
 
-const url = 'ws://localhost:9999'; // URL para o stream WebSocket
+// Elementos DOM
 const videoContainer = document.getElementById('video-container');
+const statusElement = document.getElementById('status');
 
-// TESTE: cria um canvas manualmente para ver se aparece
-const testCanvas = document.createElement('canvas');
-testCanvas.width = 320;
-testCanvas.height = 240;
-testCanvas.style.border = "2px solid red";
-testCanvas.style.position = "absolute";
-testCanvas.style.zIndex = 1000;
-videoContainer.appendChild(testCanvas);
+// Variáveis globais
+let player = null;
+let isDetectionRunning = false;
 
-// Função principal assíncrona para encapsular a lógica
+// Função para atualizar status na tela
+function updateStatus(message, type = 'loading') {
+    statusElement.textContent = message;
+    statusElement.className = `status ${type}`;
+    console.log(`[${type.toUpperCase()}] ${message}`);
+}
+
+// Função principal
 async function main() {
-  console.log("Carregando modelos do FaceAPI...");
-  try {
-    await Promise.all([
-      faceapi.nets.tinyFaceDetector.loadFromUri('/models/tiny_face_detector'), // Caminho corrigido
-      faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
-      faceapi.nets.faceRecognitionNet.loadFromUri('/models')
-    ]);
-    console.log("Modelos carregados com sucesso.");
-    startPlayerAndDetection();
-  } catch (error) {
-    console.error("Erro ao carregar modelos do FaceAPI:", error);
-    alert("Não foi possível carregar os modelos de reconhecimento facial. Verifique o console para mais detalhes.");
-  }
-}
-
-// Carrega os descritores do servidor
-async function loadLabeledImages() {
-  const labels = ['Arthur']; // O nome/rótulo que você salvou no banco de dados
-  console.log("Carregando descritores de rosto para:", labels.join(', '));
-
-  return Promise.all(
-    labels.map(async label => {
-      try {
-        const response = await fetch(`http://localhost:3000/descriptors/${label}`);
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(`Falha ao buscar descritor para ${label}: ${errorData.error || response.statusText}`);
-        }
-        const descriptors = await response.json();
-        if (!descriptors || descriptors.length === 0) {
-          throw new Error(`Nenhum descritor válido retornado para ${label}`);
-        }
-
-        // O servidor já formata o descritor, então apenas o convertemos para Float32Array
-        const faceDescriptors = descriptors.map(d => new Float32Array(d));
-        return new faceapi.LabeledFaceDescriptors(label, faceDescriptors);
-
-      } catch (error) {
-        console.error(`Erro ao carregar descritores para o rótulo \"${label}\":`, error);
-        // Retorna null se um rótulo específico falhar
-        return null;
-      }
-    })
-  );
-}
-
-// Função para aguardar o canvas estar pronto
-async function waitForCanvasReady(canvas, maxTries = 20, interval = 300) {
-  let tries = 0;
-  while (tries < maxTries) {
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      console.warn('Canvas context ainda não disponível, tentativa', tries + 1);
-      await new Promise(res => setTimeout(res, interval));
-      tries++;
-      continue;
-    }
-    let pixels;
     try {
-      pixels = ctx.getImageData(0, 0, 1, 1).data;
-    } catch (e) {
-      console.warn('Erro ao acessar getImageData, tentativa', tries + 1, e);
-      await new Promise(res => setTimeout(res, interval));
-      tries++;
-      continue;
+        // Verificar se face-api.js está disponível
+        if (typeof faceapi === 'undefined') {
+            throw new Error('face-api.js não foi carregado. Verifique a conexão com a internet.');
+        }
+        
+        updateStatus('Carregando modelos de detecção facial...', 'loading');
+        
+        // Carregar apenas modelos essenciais que existem
+        await Promise.all([
+            faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_PATH + '/tiny_face_detector'),
+            faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_PATH),
+            faceapi.nets.faceExpressionNet.loadFromUri(MODEL_PATH)
+        ]);
+        
+        updateStatus('Modelos carregados! Iniciando transmissão de vídeo...', 'loading');
+        
+        // Iniciar player de vídeo
+        startVideoPlayer();
+        
+    } catch (error) {
+        console.error('Erro ao carregar modelos:', error);
+        updateStatus('Erro ao carregar modelos: ' + error.message, 'error');
     }
-    if (pixels[3] !== 0) return true; // Se o alpha não for 0, tem imagem
-    await new Promise(res => setTimeout(res, interval));
-    tries++;
-  }
-  return false;
 }
 
-// Inicia o player de vídeo e a detecção facial
-async function startPlayerAndDetection() {
-  console.log("Iniciando player de vídeo...");
-  const player = new JSMpeg.Player(url, {
-    audio: false,
-    // Passa explicitamente o container para o JSMpeg criar o canvas dentro dele
-    // Isso garante que o canvas será filho de videoContainer
-    // https://github.com/phoboslab/jsmpeg#usage
-    // O canvas será criado automaticamente dentro do container
-    // Assim o MutationObserver funciona corretamente
-    // O canvas será o primeiro filho do videoContainer
-    // O overlay será adicionado depois
-    // O resto do código permanece igual
-    //
-    // O onPlay é chamado quando o player começa a tocar
-    // O observer detecta o canvas assim que ele aparece
-    //
-    // Adiciona a opção "container"
-    //
-    // O resto do código permanece igual
-    container: videoContainer,
-    onPlay: () => {
-      console.log("Stream de vídeo iniciado. Aguardando canvas do player...");
-      const observer = new MutationObserver(async (mutationsList, observerInstance) => {
-        const videoCanvas = videoContainer.querySelector('canvas');
-        if (videoCanvas) {
-          observerInstance.disconnect();
-          console.log('Canvas do player detectado. Iniciando detecção de rosto...');
+// Iniciar player JSMpeg
+function startVideoPlayer() {
+    try {
+        // Verificar se JSMpeg está disponível
+        if (typeof JSMpeg === 'undefined') {
+            throw new Error('JSMpeg não foi carregado. Verifique se o arquivo jsmpeg.min.js foi carregado corretamente.');
+        }
+        
+        updateStatus('Conectando ao stream de vídeo...', 'loading');
+        
+        player = new JSMpeg.Player(WEBSOCKET_URL, {
+            canvas: createVideoCanvas(),
+            audio: false,
+            autoplay: true,
+            loop: false,
+            onConnect: () => {
+                updateStatus('Conectado! Aguardando dados de vídeo...', 'loading');
+                console.log('WebSocket conectado com sucesso');
+            },
+            onPlay: () => {
+                updateStatus('✅ Transmissão ativa - Detecção facial funcionando', 'connected');
+                console.log('Player iniciado, começando detecção facial');
+                startFaceDetection();
+            },
+            onStall: () => {
+                updateStatus('⚠️ Buffer de vídeo - Reconectando...', 'loading');
+                console.log('Stream pausado ou com buffer');
+            },
+            onEnded: () => {
+                updateStatus('❌ Transmissão interrompida', 'error');
+                console.log('Stream terminado');
+            },
+            onError: (error) => {
+                updateStatus('❌ Erro na transmissão: ' + error, 'error');
+                console.error('Erro no player:', error);
+            }
+        });
+        
+    } catch (error) {
+        console.error('Erro ao iniciar player:', error);
+        updateStatus('Erro ao conectar com o stream: ' + error.message, 'error');
+    }
+}
 
-          const labeledFaceDescriptors = (await loadLabeledImages()).filter(d => d !== null);
-          if (labeledFaceDescriptors.length === 0) {
-            console.error("Nenhum descritor de rosto foi carregado com sucesso. A detecção não pode continuar.");
-            alert("Não foi possível carregar os dados de reconhecimento. Verifique o console.");
-            return;
-          }
-          console.log("Descritores carregados e prontos.");
+// Criar canvas para o vídeo
+function createVideoCanvas() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 480;
+    canvas.style.maxWidth = '100%';
+    canvas.style.height = 'auto';
+    canvas.id = 'video-canvas';
+    videoContainer.appendChild(canvas);
+    console.log('Canvas de vídeo criado:', canvas.width + 'x' + canvas.height);
+    return canvas;
+}
 
-          // Aguarda o canvas ter imagem antes de criar o overlay
-          const ready = await waitForCanvasReady(videoCanvas);
-          if (!ready) {
-            console.error("Canvas do vídeo não ficou pronto a tempo. Não será possível detectar rostos.");
-            return;
-          }
+// Iniciar detecção facial
+function startFaceDetection() {
+    if (isDetectionRunning || !player || !player.canvas) {
+        console.log('Detecção já está rodando ou player não disponível');
+        return;
+    }
+    
+    isDetectionRunning = true;
+    const canvas = player.canvas;
+    
+    console.log('Iniciando detecção facial no canvas:', canvas.width + 'x' + canvas.height);
+    
+    // Criar overlay para desenhar detecções
+    const overlay = document.createElement('canvas');
+    overlay.width = canvas.width;
+    overlay.height = canvas.height;
+    overlay.style.position = 'absolute';
+    overlay.style.top = '0';
+    overlay.style.left = '0';
+    overlay.style.pointerEvents = 'none';
+    overlay.id = 'face-overlay';
+    
+    // Posicionar overlay sobre o vídeo
+    videoContainer.style.position = 'relative';
+    videoContainer.appendChild(overlay);
+    
+    console.log('Overlay criado e posicionado');
+    
+    // Loop de detecção
+    detectFaces(canvas, overlay);
+}
 
-          const faceMatcher = new faceapi.FaceMatcher(labeledFaceDescriptors, 0.6);
-          const displaySize = { width: videoCanvas.width, height: videoCanvas.height };
-          const overlay = faceapi.createCanvasFromMedia(videoCanvas);
-          videoContainer.appendChild(overlay);
-          faceapi.matchDimensions(overlay, displaySize);
-
-          console.log("Iniciando loop de detecção...");
-          setInterval(async () => {
+// Função de detecção facial
+async function detectFaces(videoCanvas, overlay) {
+    const overlayCtx = overlay.getContext('2d');
+    let detectionCount = 0;
+    
+    const detect = async () => {
+        try {
+            // Verificar se o canvas tem dados de vídeo
             const ctx = videoCanvas.getContext('2d');
             if (!ctx) {
-              console.warn('Contexto do canvas não disponível nesta iteração. Pulando detecção.');
-              return;
+                console.warn('Canvas context não disponível');
+                return;
             }
-            let detections = [];
-            try {
-              detections = await faceapi.detectAllFaces(videoCanvas, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
-            } catch (e) {
-              console.warn('Erro ao rodar detectAllFaces:', e);
-              return;
-            }
-            const resizedDetections = faceapi.resizeResults(detections, displaySize);
-            const overlayCtx = overlay.getContext('2d');
-            if (!overlayCtx) {
-              console.warn('Contexto do overlay não disponível.');
-              return;
-            }
+            
+            // Detectar faces com configurações mais permissivas
+            const detections = await faceapi
+                .detectAllFaces(videoCanvas, new faceapi.TinyFaceDetectorOptions({
+                    inputSize: 416,
+                    scoreThreshold: 0.3  // Limite mais baixo para detectar melhor
+                }))
+                .withFaceLandmarks()
+                .withFaceExpressions();
+            
+            // Limpar overlay
             overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
-
-            // Log de debug: quantos rostos detectados
-            console.log(`Rostos detectados: ${resizedDetections.length}`);
-
-            const results = resizedDetections.map(d => faceMatcher.findBestMatch(d.descriptor));
-            results.forEach((result, i) => {
-              const box = resizedDetections[i].detection.box;
-              const drawBox = new faceapi.draw.DrawBox(box, { label: result.toString() });
-              drawBox.draw(overlay);
-            });
-          }, 2000);
+            
+            // Log periódico para debug
+            detectionCount++;
+            if (detectionCount % 30 === 0) {  // A cada 30 detecções (aprox. 3 segundos)
+                console.log(`Detecção #${detectionCount} - Faces encontradas: ${detections.length}`);
+            }
+            
+            // Desenhar detecções
+            if (detections.length > 0) {
+                console.log(`✓ ${detections.length} face(s) detectada(s)`);
+                
+                // Redimensionar detecções para o tamanho do canvas
+                const resizedDetections = faceapi.resizeResults(detections, {
+                    width: videoCanvas.width,
+                    height: videoCanvas.height
+                });
+                
+                // Desenhar caixas e informações
+                resizedDetections.forEach((detection, index) => {
+                    const { box } = detection.detection;
+                    const { expressions } = detection;
+                    
+                    // Encontrar expressão dominante
+                    const dominantExpression = Object.keys(expressions).reduce((a, b) => 
+                        expressions[a] > expressions[b] ? a : b
+                    );
+                    
+                    // Desenhar caixa
+                    overlayCtx.strokeStyle = '#00ff00';
+                    overlayCtx.lineWidth = 2;
+                    overlayCtx.strokeRect(box.x, box.y, box.width, box.height);
+                    
+                    // Desenhar label com expressão
+                    const confidence = (expressions[dominantExpression] * 100).toFixed(1);
+                    const label = `Face ${index + 1}: ${dominantExpression} (${confidence}%)`;
+                    
+                    // Fundo do texto
+                    overlayCtx.fillStyle = '#00ff00';
+                    const textWidth = overlayCtx.measureText(label).width;
+                    overlayCtx.fillRect(box.x, box.y - 25, textWidth + 10, 20);
+                    
+                    // Texto
+                    overlayCtx.fillStyle = '#000000';
+                    overlayCtx.font = '14px Arial';
+                    overlayCtx.fillText(label, box.x + 5, box.y - 10);
+                });
+            }
+            
+        } catch (error) {
+            console.warn('Erro na detecção facial:', error.message);
         }
-      });
-      observer.observe(videoContainer, { childList: true, subtree: true });
-    },
-    onStall: () => {
-        console.warn("Stream de vídeo pausado ou com buffer.");
-    },
-    onEnded: () => {
-        console.error("Stream de vídeo terminado.");
-    }
-  });
+        
+        // Continuar detecção
+        if (isDetectionRunning) {
+            setTimeout(detect, 100); // Detectar a cada 100ms
+        }
+    };
+    
+    console.log('Iniciando loop de detecção...');
+    detect();
 }
 
-// Inicia a aplicação
-main();
+// Iniciar aplicação quando a página carregar
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM carregado, iniciando aplicação...');
+    main();
+});
