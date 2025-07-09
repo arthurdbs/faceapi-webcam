@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Detecção Facial - iME 360 C</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            max-width: 800px;
+            width: 100%;
+            text-align: center;
+        }
+        
+        .header {
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2.2rem;
+            font-weight: 300;
+        }
+        
+        .header .subtitle {
+            color: #666;
+            font-size: 1.1rem;
+            margin-bottom: 20px;
+        }
+        
+        .camera-icon {
+            font-size: 3rem;
+            margin-bottom: 15px;
+            display: block;
+        }
+        
+        #video-container {
+            position: relative;
+            display: inline-block;
+            background: #000;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+        
+        #video-container canvas {
+            display: block;
+            max-width: 100%;
+            height: auto;
+        }
+        
+        .status-section {
+            margin-top: 20px;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-weight: 600;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            min-width: 200px;
+        }
+        
+        .status.warning {
+            background: linear-gradient(45deg, #ffeaa7, #fdcb6e);
+            color: #d63031;
+            border: 2px solid #fdcb6e;
+        }
+        
+        .status.connected {
+            background: linear-gradient(45deg, #00b894, #00cec9);
+            color: white;
+            border: 2px solid #00b894;
+        }
+        
+        .status.error {
+            background: linear-gradient(45deg, #ff7675, #fd79a8);
+            color: white;
+            border: 2px solid #ff7675;
+        }
+        
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 25px;
+            padding-top: 25px;
+            border-top: 1px solid #eee;
+        }
+        
+        .feature {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .feature-icon {
+            font-size: 1.5rem;
+            margin-bottom: 8px;
+            display: block;
+        }
+        
+        .feature-title {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+        }
+        
+        .feature-desc {
+            color: #666;
+            font-size: 0.8rem;
+            line-height: 1.4;
+        }
+        
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 25px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(45deg, #ddd, #bbb);
+            color: #333;
+        }
+        
+        .btn-test {
+            background: linear-gradient(45deg, #00b894, #00cec9);
+            color: white;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .info-panel {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 20px;
+            text-align: left;
+            font-size: 0.9rem;
+            color: #666;
+        }
+        
+        .info-panel h4 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 1rem;
+        }
+        
+        .info-panel ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        
+        .info-panel li {
+            margin: 5px 0;
+            padding-left: 20px;
+            position: relative;
+        }
+        
+        .info-panel li:before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #00b894;
+            font-weight: bold;
+        }
+        
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px;
+                margin: 10px;
+            }
+            
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .features {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <span class="camera-icon">📹</span>
+            <h1>Sistema de Detecção Facial</h1>
+            <p class="subtitle">Câmera iME 360 C • Detecção em Tempo Real</p>
+        </div>
+        
+        <div id="video-container">
+            <!-- Canvas será inserido aqui pelo JavaScript -->
+        </div>
+        
+        <div class="status-section">
+            <div id="status" class="status warning pulse">
+                🔄 Inicializando sistema...
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button class="btn btn-test" onclick="window.forceDetection && window.forceDetection()">
+                🔴 FORÇAR DETECÇÃO
+            </button>
+            <button class="btn btn-test" onclick="window.testOverlay && window.testOverlay()">
+                🔵 Testar Quadrados Azuis
+            </button>
+            <button class="btn btn-primary" onclick="window.debugInfo && window.debugInfo()">
+                🔧 Status do Sistema
+            </button>
+            <button class="btn btn-secondary" onclick="location.reload()">
+                🔄 Reiniciar
+            </button>
+        </div>
+        
+        <div class="features">
+            <div class="feature">
+                <span class="feature-icon">🎯</span>
+                <div class="feature-title">Detecção Precisa</div>
+                <div class="feature-desc">IA avançada para detecção facial em tempo real</div>
+            </div>
+            
+            <div class="feature">
+                <span class="feature-icon">⚡</span>
+                <div class="feature-title">Tempo Real</div>
+                <div class="feature-desc">Processamento rápido a 15+ FPS</div>
+            </div>
+            
+            <div class="feature">
+                <span class="feature-icon">🔒</span>
+                <div class="feature-title">Seguro</div>
+                <div class="feature-desc">Processamento local, sem envio de dados</div>
+            </div>
+            
+            <div class="feature">
+                <span class="feature-icon">📱</span>
+                <div class="feature-title">Responsivo</div>
+                <div class="feature-desc">Funciona em qualquer dispositivo</div>
+            </div>
+        </div>
+        
+        <div class="info-panel">
+            <h4>🔧 Informações Técnicas</h4>
+            <ul>
+                <li>Câmera: iME 360 C via RTSP (192.168.1.24:554)</li>
+                <li>Stream: WebSocket localhost:9999 (MPEG-1)</li>
+                <li>IA: face-api.js com TinyFaceDetector</li>
+                <li>Resolução: 640x480 pixels</li>
+                <li>Threshold: 0.3 (30% de confiança mínima)</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="jsmpeg.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <script src="script-final.js"></script>
+</body>
+</html>

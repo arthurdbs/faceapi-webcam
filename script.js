@@ -20,27 +20,41 @@ function updateStatus(message, type = 'loading') {
 // Função principal
 async function main() {
     try {
+        console.log('=== INICIANDO MAIN ===');
+        
         // Verificar se face-api.js está disponível
         if (typeof faceapi === 'undefined') {
-            throw new Error('face-api.js não foi carregado. Verifique a conexão com a internet.');
+            console.error('face-api.js NÃO ESTÁ DISPONÍVEL!');
+            updateStatus('Erro: face-api.js não carregou', 'error');
+            return;
         }
         
+        console.log('face-api.js está disponível!');
         updateStatus('Carregando modelos de detecção facial...', 'loading');
         
-        // Carregar apenas modelos essenciais que existem
-        await Promise.all([
-            faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_PATH + '/tiny_face_detector'),
-            faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_PATH),
-            faceapi.nets.faceExpressionNet.loadFromUri(MODEL_PATH)
-        ]);
+        console.log('Iniciando carregamento dos modelos...');
         
+        // Carregar apenas um modelo por vez para debug
+        console.log('Carregando TinyFaceDetector...');
+        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_PATH + '/tiny_face_detector');
+        console.log('✓ TinyFaceDetector carregado');
+        
+        console.log('Carregando FaceLandmark68Net...');
+        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_PATH);
+        console.log('✓ FaceLandmark68Net carregado');
+        
+        console.log('Carregando FaceExpressionNet...');
+        await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_PATH);
+        console.log('✓ FaceExpressionNet carregado');
+        
+        console.log('=== TODOS OS MODELOS CARREGADOS COM SUCESSO ===');
         updateStatus('Modelos carregados! Iniciando transmissão de vídeo...', 'loading');
         
         // Iniciar player de vídeo
         startVideoPlayer();
         
     } catch (error) {
-        console.error('Erro ao carregar modelos:', error);
+        console.error('=== ERRO NO MAIN ===', error);
         updateStatus('Erro ao carregar modelos: ' + error.message, 'error');
     }
 }
@@ -65,8 +79,9 @@ function startVideoPlayer() {
                 console.log('WebSocket conectado com sucesso');
             },
             onPlay: () => {
+                console.log('=== VÍDEO COMEÇOU A TOCAR ===');
                 updateStatus('✅ Transmissão ativa - Detecção facial funcionando', 'connected');
-                console.log('Player iniciado, começando detecção facial');
+                console.log('Chamando startFaceDetection...');
                 startFaceDetection();
             },
             onStall: () => {
@@ -104,15 +119,21 @@ function createVideoCanvas() {
 
 // Iniciar detecção facial
 function startFaceDetection() {
+    console.log('=== INICIANDO startFaceDetection ===');
+    console.log('isDetectionRunning:', isDetectionRunning);
+    console.log('player:', player);
+    console.log('player.canvas:', player ? player.canvas : 'sem player');
+    
     if (isDetectionRunning || !player || !player.canvas) {
-        console.log('Detecção já está rodando ou player não disponível');
+        console.log('ABORTANDO: Detecção já está rodando ou player não disponível');
         return;
     }
     
     isDetectionRunning = true;
     const canvas = player.canvas;
     
-    console.log('Iniciando detecção facial no canvas:', canvas.width + 'x' + canvas.height);
+    console.log('Canvas encontrado:', canvas.width + 'x' + canvas.height);
+    console.log('Iniciando detecção facial no canvas...');
     
     // Criar overlay para desenhar detecções
     const overlay = document.createElement('canvas');
@@ -224,5 +245,14 @@ async function detectFaces(videoCanvas, overlay) {
 // Iniciar aplicação quando a página carregar
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM carregado, iniciando aplicação...');
-    main();
+    
+    // Verificar se as bibliotecas estão carregadas
+    console.log('JSMpeg disponível:', typeof JSMpeg !== 'undefined');
+    console.log('face-api disponível:', typeof faceapi !== 'undefined');
+    
+    // Aguardar um pouco para garantir que o face-api.js carregue
+    setTimeout(() => {
+        console.log('face-api após timeout:', typeof faceapi !== 'undefined');
+        main();
+    }, 2000);
 });

@@ -16,7 +16,7 @@ app.get('/', (req, res) => {
 // Configurar stream da câmera iME 360 C
 const stream = new Stream({
   name: 'camera-stream',
-  streamUrl: 'rtsp://admin:APPIA-DADOOH@192.168.18.191:554/cam/realmonitor?channel=1&subtype=1',
+  streamUrl: 'rtsp://admin:APPIA-DADOOH@192.168.1.24:554/cam/realmonitor?channel=1&subtype=1',
   wsPort: 9999,
   ffmpegOptions: {
     '-stats': '',

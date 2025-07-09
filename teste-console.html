@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste Console</title>
+</head>
+<body>
+    <h1>Teste do Console</h1>
+    <div id="status">Carregando...</div>
+    
+    <script>
+        console.log('TESTE 1: Script iniciando...');
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('TESTE 2: DOM carregado');
+            document.getElementById('status').textContent = 'DOM carregado!';
+        });
+        
+        console.log('TESTE 3: Script finalizando...');
+    </script>
+</body>
+</html>

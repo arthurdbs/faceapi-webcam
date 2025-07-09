@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎯 Teste Simples - Quadradinhos</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #222;
+            color: white;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        h1 {
+            color: #4CAF50;
+            margin-bottom: 20px;
+        }
+        
+        #video-container {
+            position: relative;
+            display: inline-block;
+            background: #000;
+            border: 3px solid #4CAF50;
+            margin: 20px;
+        }
+        
+        #video-canvas {
+            display: block;
+        }
+        
+        #detection-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 10;
+            border: 2px dashed red; /* Para ver o overlay */
+        }
+        
+        .controls {
+            margin: 20px 0;
+        }
+        
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        button:hover {
+            background: #45a049;
+        }
+        
+        .status {
+            background: #333;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        
+        .logs {
+            background: #111;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            text-align: left;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎯 Teste Simples - Quadradinhos de Detecção</h1>
+    
+    <div id="video-container">
+        <!-- Canvas será inserido aqui -->
+    </div>
+    
+    <div class="controls">
+        <button onclick="testDrawing()">🔳 Testar Overlay</button>
+        <button onclick="toggleDetection()">🎯 Toggle Detecção</button>
+        <button onclick="clearCanvas()">🧹 Limpar</button>
+    </div>
+    
+    <div id="status" class="status">🔄 Carregando...</div>
+    
+    <div class="logs" id="logs">
+        <div>Aguardando inicialização...</div>
+    </div>
+
+    <script src="jsmpeg.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    
+    <script>
+        let state = {
+            player: null,
+            canvas: null,
+            overlay: null,
+            modelsLoaded: false,
+            detectionActive: false
+        };
+        
+        document.addEventListener('DOMContentLoaded', async () => {
+            log('🚀 Inicializando teste simples...');
+            
+            // Carregar modelos
+            await loadModels();
+            
+            // Criar vídeo
+            createVideo();
+        });
+        
+        async function loadModels() {
+            try {
+                log('📦 Carregando modelos...');
+                updateStatus('📦 Carregando modelos...');
+                
+                await faceapi.loadTinyFaceDetectorModel('./models');
+                state.modelsLoaded = true;
+                
+                log('✅ Modelos carregados!');
+                updateStatus('✅ Modelos carregados');
+                
+            } catch (error) {
+                log('❌ Erro nos modelos: ' + error.message);
+                updateStatus('❌ Erro nos modelos');
+            }
+        }
+        
+        function createVideo() {
+            log('🎥 Criando vídeo...');
+            
+            // Canvas principal
+            state.canvas = document.createElement('canvas');
+            state.canvas.width = 640;
+            state.canvas.height = 480;
+            state.canvas.id = 'video-canvas';
+            
+            // Overlay
+            state.overlay = document.createElement('canvas');
+            state.overlay.width = 640;
+            state.overlay.height = 480;
+            state.overlay.id = 'detection-overlay';
+            state.overlay.style.position = 'absolute';
+            state.overlay.style.top = '0';
+            state.overlay.style.left = '0';
+            state.overlay.style.pointerEvents = 'none';
+            state.overlay.style.zIndex = '10';
+            
+            // Adicionar ao container
+            const container = document.getElementById('video-container');
+            container.appendChild(state.canvas);
+            container.appendChild(state.overlay);
+            
+            log('✅ Canvas criado: ' + state.canvas.width + 'x' + state.canvas.height);
+            log('✅ Overlay criado: ' + state.overlay.width + 'x' + state.overlay.height);
+            
+            // Criar player
+            state.player = new JSMpeg.Player('ws://localhost:9999', {
+                canvas: state.canvas,
+                audio: false,
+                autoplay: true,
+                onPlay: () => {
+                    log('🎬 Vídeo iniciado!');
+                    updateStatus('✅ Vídeo conectado - Iniciando detecção automática...');
+                    
+                    // Iniciar detecção automática
+                    setTimeout(() => {
+                        if (state.modelsLoaded) {
+                            startDetection();
+                        }
+                    }, 1000);
+                },
+                onError: (error) => {
+                    log('❌ Erro no vídeo: ' + error);
+                    updateStatus('❌ Erro no vídeo');
+                }
+            });
+        }
+        
+        function testDrawing() {
+            log('🧪 Testando desenho no overlay...');
+            
+            const ctx = state.overlay.getContext('2d');
+            ctx.clearRect(0, 0, state.overlay.width, state.overlay.height);
+            
+            // Desenhar retângulo de teste
+            ctx.strokeStyle = '#ff0000';
+            ctx.lineWidth = 5;
+            ctx.strokeRect(100, 100, 200, 150);
+            
+            // Desenhar outro retângulo
+            ctx.strokeStyle = '#00ff00';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(350, 200, 150, 100);
+            
+            // Texto
+            ctx.fillStyle = '#ffff00';
+            ctx.font = 'bold 20px Arial';
+            ctx.fillText('TESTE!', 120, 140);
+            ctx.fillText('OVERLAY', 360, 240);
+            
+            log('✅ Desenho de teste realizado!');
+            updateStatus('🧪 Teste de desenho executado');
+        }
+        
+        async function startDetection() {
+            if (!state.modelsLoaded) {
+                log('❌ Modelos não carregados!');
+                return;
+            }
+            
+            log('🔍 Iniciando detecção automática e contínua...');
+            state.detectionActive = true;
+            updateStatus('🔍 Detecção facial automática ativa');
+            
+            detectLoop();
+        }
+        
+        async function detectLoop() {
+            if (!state.detectionActive) return;
+            
+            try {
+                // Verificar se há dados no vídeo
+                const ctx = state.canvas.getContext('2d');
+                const imageData = ctx.getImageData(0, 0, 10, 10);
+                const hasData = !imageData.data.every(val => val === 0);
+                
+                if (!hasData) {
+                    setTimeout(detectLoop, 300);
+                    return;
+                }
+                
+                // Fazer detecção
+                const detections = await faceapi
+                    .detectAllFaces(state.canvas, new faceapi.TinyFaceDetectorOptions({
+                        inputSize: 416,
+                        scoreThreshold: 0.3
+                    }));
+                
+                // Limpar overlay
+                const overlayCtx = state.overlay.getContext('2d');
+                overlayCtx.clearRect(0, 0, state.overlay.width, state.overlay.height);
+                
+                if (detections.length > 0) {
+                    log(`👥 ${detections.length} face(s) detectada(s)!`);
+                    
+                    // Desenhar detecções
+                    overlayCtx.strokeStyle = '#00ff00';
+                    overlayCtx.lineWidth = 4;
+                    overlayCtx.fillStyle = '#00ff00';
+                    overlayCtx.font = 'bold 18px Arial';
+                    
+                    detections.forEach((detection, index) => {
+                        const { x, y, width, height } = detection.box;
+                        
+                        log(`   Face ${index + 1}: (${Math.round(x)}, ${Math.round(y)}) ${Math.round(width)}x${Math.round(height)}`);
+                        
+                        // Retângulo
+                        overlayCtx.strokeRect(x, y, width, height);
+                        
+                        // Label
+                        const label = `Face ${index + 1}`;
+                        overlayCtx.fillText(label, x + 5, y - 10);
+                    });
+                    
+                    updateStatus(`✅ ${detections.length} face(s) detectada(s)`);
+                    
+                } else {
+                    log('🔍 Nenhuma face detectada...');
+                }
+                
+            } catch (error) {
+                log('❌ Erro na detecção: ' + error.message);
+            }
+            
+            // Continuar detecção em loop contínuo
+            setTimeout(detectLoop, 300);
+        }
+        
+        function toggleDetection() {
+            if (state.detectionActive) {
+                state.detectionActive = false;
+                log('⏹️ Detecção parada');
+                updateStatus('⏹️ Detecção parada');
+                clearCanvas();
+            } else {
+                startDetection();
+            }
+        }
+        
+        function clearCanvas() {
+            const ctx = state.overlay.getContext('2d');
+            ctx.clearRect(0, 0, state.overlay.width, state.overlay.height);
+            log('🧹 Overlay limpo');
+            updateStatus('🧹 Overlay limpo');
+        }
+        
+        function log(message) {
+            console.log(message);
+            const logs = document.getElementById('logs');
+            const time = new Date().toLocaleTimeString();
+            logs.innerHTML = `<div>[${time}] ${message}</div>` + logs.innerHTML;
+            
+            // Manter apenas últimas 15 mensagens
+            const divs = logs.getElementsByTagName('div');
+            while (divs.length > 15) {
+                logs.removeChild(divs[divs.length - 1]);
+            }
+        }
+        
+        function updateStatus(message) {
+            document.getElementById('status').textContent = message;
+        }
+    </script>
+</body>
+</html>
