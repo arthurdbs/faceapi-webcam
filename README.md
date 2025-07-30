@@ -11,17 +11,20 @@ Aplicação simples para detecção facial em vídeos usando MediaPipe.
 
 ## 🚀 Como Instalar e Rodar
 
-### 1. Ativar o ambiente virtual
+### 1. Instalar dependências
 ```bash
-source .venv/bin/activate
+pip install opencv-python mediapipe numpy
 ```
 
-### 2. Executar o programa
+### 2. Adicionar um vídeo
+Coloque qualquer arquivo de vídeo (.mp4, .avi, .mov, .mkv) no diretório do projeto.
+
+### 3. Executar o programa
 ```bash
 python processar_video.py
 ```
 
-### 3. Usar a aplicação
+### 4. Usar a aplicação
 1. O programa listará todos os vídeos disponíveis no diretório
 2. Digite o número do vídeo que deseja processar
 3. O vídeo abrirá em tela cheia com detecção facial
